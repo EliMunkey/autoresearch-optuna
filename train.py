@@ -14,11 +14,7 @@ from optuna.samplers import TPESampler, CmaEsSampler, BaseSampler
 
 
 class TPEThenCmaEs(BaseSampler):
-    """Start with tuned TPE for global search, switch to CMA-ES for local refinement.
-
-    TPE explores broadly to find promising regions. CMA-ES then does efficient
-    local optimization in continuous space with covariance adaptation.
-    """
+    """Start with tuned TPE for global search, switch to CMA-ES for local refinement."""
 
     def __init__(self, seed=None, switch_at=30):
         self._tpe = TPESampler(
@@ -26,13 +22,13 @@ class TPEThenCmaEs(BaseSampler):
             n_ei_candidates=48,
             multivariate=True,
             seed=seed,
-            gamma=lambda n: max(1, int(math.ceil(0.15 * n))),
+            gamma=lambda n: max(1, int(math.ceil(0.20 * n))),  # top 20%
             consider_endpoints=True,
             warn_independent_sampling=False,
         )
         self._cmaes = CmaEsSampler(
             seed=seed,
-            n_startup_trials=1,  # CMA-ES starts from TPE's best
+            n_startup_trials=1,
             warn_independent_sampling=False,
         )
         self._switch_at = switch_at
