@@ -10,15 +10,20 @@ The agent evolves this to minimize trials-to-target on benchmark functions.
 
 import math
 import optuna
-from optuna.samplers import TPESampler, CmaEsSampler, BaseSampler
+from optuna.samplers import TPESampler, CmaEsSampler, QMCSampler, BaseSampler
 
 
-class TPEThenCmaEs(BaseSampler):
-    """Start with tuned TPE for global search, switch to CMA-ES for local refinement."""
+class SobolTPECmaEs(BaseSampler):
+    """Three-phase with Sobol quasi-random startup:
+    Phase 1 (0-4):  Sobol QMC — optimal space-filling startup
+    Phase 2 (5-24): Tuned multivariate TPE — global search
+    Phase 3 (25+):  CMA-ES — local refinement
+    """
 
-    def __init__(self, seed=None, switch_at=30):
+    def __init__(self, seed=None):
+        self._qmc = QMCSampler(seed=seed, warn_independent_sampling=False)
         self._tpe = TPESampler(
-            n_startup_trials=5,
+            n_startup_trials=0,  # no random startup — QMC already covered it
             n_ei_candidates=48,
             multivariate=True,
             seed=seed,
@@ -31,10 +36,14 @@ class TPEThenCmaEs(BaseSampler):
             n_startup_trials=1,
             warn_independent_sampling=False,
         )
-        self._switch_at = switch_at
 
     def _pick(self, study):
-        return self._cmaes if len(study.trials) >= self._switch_at else self._tpe
+        n = len(study.trials)
+        if n < 5:
+            return self._qmc
+        elif n < 25:
+            return self._tpe
+        return self._cmaes
 
     def infer_relative_search_space(self, study, trial):
         return self._pick(study).infer_relative_search_space(study, trial)
@@ -51,4 +60,4 @@ class TPEThenCmaEs(BaseSampler):
 def create_sampler(seed=None):
     """Return an Optuna sampler. This is the function prepare.py calls.
     seed is provided by prepare.py for reproducibility — pass it through."""
-    return TPEThenCmaEs(seed=seed, switch_at=25)
+    return SobolTPECmaEs(seed=seed)
