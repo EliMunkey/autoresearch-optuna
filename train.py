@@ -8,6 +8,7 @@ Baseline: default TPESampler with standard parameters.
 The agent evolves this to minimize trials-to-target on benchmark functions.
 """
 
+import math
 import optuna
 from optuna.samplers import TPESampler
 
@@ -20,4 +21,7 @@ def create_sampler(seed=None):
         n_ei_candidates=24,
         multivariate=True,
         seed=seed,
+        # More aggressive gamma: use top 15% as "good" observations
+        # Default is ~25% * sqrt(n), capped at 25
+        gamma=lambda n: max(1, int(math.ceil(0.15 * n))),
     )
