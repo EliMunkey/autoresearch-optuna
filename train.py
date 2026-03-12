@@ -18,7 +18,7 @@ def create_sampler(seed=None):
     seed is provided by prepare.py for reproducibility — pass it through."""
     return TPESampler(
         n_startup_trials=5,
-        n_ei_candidates=32,
+        n_ei_candidates=48,
         multivariate=True,
         seed=seed,
         gamma=lambda n: max(1, int(math.ceil(0.15 * n))),
