@@ -14,7 +14,7 @@ from optuna.samplers import TPESampler, CmaEsSampler, QMCSampler, BaseSampler
 
 
 class SobolTPECmaEs(BaseSampler):
-    """Three-phase with Sobol quasi-random startup:
+    """Sobol QMC startup → tuned TPE → CMA-ES.
     Phase 1 (0-4):  Sobol QMC — optimal space-filling startup
     Phase 2 (5-24): Tuned multivariate TPE — global search
     Phase 3 (25+):  CMA-ES — local refinement
@@ -23,7 +23,7 @@ class SobolTPECmaEs(BaseSampler):
     def __init__(self, seed=None):
         self._qmc = QMCSampler(seed=seed, warn_independent_sampling=False)
         self._tpe = TPESampler(
-            n_startup_trials=0,  # no random startup — QMC already covered it
+            n_startup_trials=0,
             n_ei_candidates=48,
             multivariate=True,
             seed=seed,
