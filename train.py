@@ -39,9 +39,9 @@ class SobolTPECmaEs(BaseSampler):
 
     def _pick(self, study):
         n = len(study.trials)
-        if n < 5:
+        if n < 10:
             return self._qmc
-        elif n < 25:
+        elif n < 40:
             return self._tpe
         return self._cmaes
 
