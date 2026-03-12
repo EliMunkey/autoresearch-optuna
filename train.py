@@ -22,7 +22,7 @@ class TPEThenCmaEs(BaseSampler):
             n_ei_candidates=48,
             multivariate=True,
             seed=seed,
-            gamma=lambda n: max(1, int(math.ceil(0.20 * n))),  # top 20%
+            gamma=lambda n: max(1, int(math.ceil(0.20 * n))),
             consider_endpoints=True,
             warn_independent_sampling=False,
         )
@@ -51,4 +51,4 @@ class TPEThenCmaEs(BaseSampler):
 def create_sampler(seed=None):
     """Return an Optuna sampler. This is the function prepare.py calls.
     seed is provided by prepare.py for reproducibility — pass it through."""
-    return TPEThenCmaEs(seed=seed, switch_at=30)
+    return TPEThenCmaEs(seed=seed, switch_at=25)
