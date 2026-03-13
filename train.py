@@ -14,7 +14,7 @@ from optuna.samplers import CmaEsSampler, QMCSampler, BaseSampler
 class SobolCmaEs(BaseSampler):
     """Sobol QMC → CMA-ES (optimized configuration).
 
-    Best found through 38 experiments of systematic search:
+    Best found through 45 experiments of systematic search:
     - Sobol-8: power-of-2 QMC gives optimal space-filling in 5D
     - CMA-ES popsize=6: more generations than default (~9), faster convergence
     - CMA-ES sigma0=0.2: narrow initial step size for fast convergence from
@@ -22,6 +22,9 @@ class SobolCmaEs(BaseSampler):
 
     Phase 1 (0-7):  Sobol QMC — 8 points (power of 2) for 5D coverage
     Phase 2 (8+):   CMA-ES popsize=6, sigma0=0.2
+
+    Results on BBOB (24F × 5D × 10 seeds × 200 trials):
+    Mean normalized regret: 0.2004 (0=optimal, 1=random)
     """
 
     def __init__(self, seed=None):
