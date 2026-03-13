@@ -8,41 +8,36 @@ Baseline: default TPESampler with standard parameters.
 The agent evolves this to minimize trials-to-target on benchmark functions.
 """
 
-import math
-import optuna
-from optuna.samplers import TPESampler, CmaEsSampler, QMCSampler, BaseSampler
+from optuna.samplers import CmaEsSampler, QMCSampler, BaseSampler
 
 
-class SobolTPECmaEs(BaseSampler):
-    """Sobol QMC startup → tuned TPE → CMA-ES.
-    Phase 1 (0-4):  Sobol QMC — optimal space-filling startup
-    Phase 2 (5-24): Tuned multivariate TPE — global search
-    Phase 3 (25+):  CMA-ES — local refinement
+class SobolCmaEs(BaseSampler):
+    """Sobol QMC → CMA-ES (optimized configuration).
+
+    Best found through 38 experiments of systematic search:
+    - Sobol-8: power-of-2 QMC gives optimal space-filling in 5D
+    - CMA-ES popsize=6: more generations than default (~9), faster convergence
+    - CMA-ES sigma0=0.2: narrow initial step size for fast convergence from
+      the best Sobol-discovered basin
+
+    Phase 1 (0-7):  Sobol QMC — 8 points (power of 2) for 5D coverage
+    Phase 2 (8+):   CMA-ES popsize=6, sigma0=0.2
     """
 
     def __init__(self, seed=None):
         self._qmc = QMCSampler(seed=seed, warn_independent_sampling=False)
-        self._tpe = TPESampler(
-            n_startup_trials=0,
-            n_ei_candidates=48,
-            multivariate=True,
-            seed=seed,
-            gamma=lambda n: max(1, int(math.ceil(0.20 * n))),
-            consider_endpoints=True,
-            warn_independent_sampling=False,
-        )
         self._cmaes = CmaEsSampler(
             seed=seed,
-            n_startup_trials=1,
+            n_startup_trials=0,
+            popsize=6,
+            sigma0=0.2,
             warn_independent_sampling=False,
         )
 
     def _pick(self, study):
         n = len(study.trials)
-        if n < 10:
+        if n < 8:
             return self._qmc
-        elif n < 40:
-            return self._tpe
         return self._cmaes
 
     def infer_relative_search_space(self, study, trial):
@@ -60,4 +55,4 @@ class SobolTPECmaEs(BaseSampler):
 def create_sampler(seed=None):
     """Return an Optuna sampler. This is the function prepare.py calls.
     seed is provided by prepare.py for reproducibility — pass it through."""
-    return SobolTPECmaEs(seed=seed)
+    return SobolCmaEs(seed=seed)
