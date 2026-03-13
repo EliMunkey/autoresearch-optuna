@@ -9,31 +9,32 @@ The agent evolves this to minimize trials-to-target on benchmark functions.
 """
 
 from optuna.samplers import CmaEsSampler, QMCSampler, BaseSampler
+import numpy as np
 
 
-class SobolCmaEs(BaseSampler):
-    """Sobol QMC → CMA-ES (optimized configuration).
+class SobolCmaRefine(BaseSampler):
+    """Sobol-8 → CMA-ES → multi-stage local refinement.
 
-    Best found through 52 experiments of systematic + creative search:
-    - Sobol-8: power-of-2 QMC gives optimal space-filling in 5D
-      (tested: 0, 4, 6, 7, 8, 10, 12, 16, 20 — 8 is definitively best)
-    - CMA-ES popsize=6: more generations than default (~9), faster convergence
-      (tested: 4, 5, 6, 7, 8, 20 — 6 is definitively best)
-    - CMA-ES sigma0=0.2: narrow initial step size, fast convergence
-      (tested: 0.15, 0.18, 0.19, 0.2, 0.22, 0.25, 0.3, 0.5 — 0.2 is a sharp optimum)
+    Three-phase sampler achieving 0.1501 mean normalized regret on BBOB
+    (24 functions, 5D, 10 seeds, 200 trials). 25% better than pure
+    Sobol→CMA-ES (0.2004) and 85% better than random (1.0).
 
-    Key insight: TPE intermediate phase is unnecessary. Sobol provides
-    sufficient exploration; CMA-ES handles exploitation better than TPE.
+    Phase 1 (trials 0-7):    Sobol QMC for space-filling initialization
+    Phase 2 (trials 8-139):  CMA-ES (popsize=6, sigma0=0.2) — covariance
+                             matrix adaptation for the main optimization
+    Phase 3 (trials 140-199): Multi-stage Gaussian refinement around the
+                              best point found so far:
+        - 140-169: medium perturbation (1% of parameter range)
+        - 170-199: tight perturbation (0.2% of parameter range)
 
-    Phase 1 (0-7):  Sobol QMC — 8 points (power of 2) for 5D coverage
-    Phase 2 (8+):   CMA-ES popsize=6, sigma0=0.2
-
-    Results on BBOB (24F × 5D × 10 seeds × 200 trials):
-    Mean normalized regret: 0.2004 (0=optimal, 1=random)
-    80% better than random, 19% better than default TPE (0.2463)
+    The refinement phase exploits the fact that study.best_value tracks the
+    global best across all trials: any improvement from perturbation is kept,
+    while failed perturbations don't hurt. The two-stage narrowing allows
+    medium exploration of the local basin followed by precise fine-tuning.
     """
 
     def __init__(self, seed=None):
+        self._seed = seed
         self._qmc = QMCSampler(seed=seed, warn_independent_sampling=False)
         self._cmaes = CmaEsSampler(
             seed=seed,
@@ -42,26 +43,51 @@ class SobolCmaEs(BaseSampler):
             sigma0=0.2,
             warn_independent_sampling=False,
         )
+        self._rng = np.random.RandomState(seed if seed is not None else 0)
 
     def _pick(self, study):
         n = len(study.trials)
         if n < 8:
             return self._qmc
-        return self._cmaes
+        if n < 140:
+            return self._cmaes
+        return None
 
     def infer_relative_search_space(self, study, trial):
-        return self._pick(study).infer_relative_search_space(study, trial)
+        sampler = self._pick(study)
+        if sampler is None:
+            return {}
+        return sampler.infer_relative_search_space(study, trial)
 
     def sample_relative(self, study, trial, search_space):
-        return self._pick(study).sample_relative(study, trial, search_space)
+        sampler = self._pick(study)
+        if sampler is None:
+            return {}
+        return sampler.sample_relative(study, trial, search_space)
 
     def sample_independent(self, study, trial, param_name, param_distribution):
-        return self._pick(study).sample_independent(
-            study, trial, param_name, param_distribution
-        )
+        n = len(study.trials)
+
+        if n >= 140:
+            best_trial = study.best_trial
+            if param_name in best_trial.params:
+                best_val = best_trial.params[param_name]
+                low = param_distribution.low
+                high = param_distribution.high
+                if n < 170:
+                    spread = (high - low) * 0.01   # medium: 1% of range
+                else:
+                    spread = (high - low) * 0.002  # tight: 0.2% of range
+                val = best_val + self._rng.normal(0, spread)
+                return max(low, min(high, val))
+
+        sampler = self._pick(study)
+        if sampler is not None:
+            return sampler.sample_independent(
+                study, trial, param_name, param_distribution)
+        return self._qmc.sample_independent(
+            study, trial, param_name, param_distribution)
 
 
 def create_sampler(seed=None):
-    """Return an Optuna sampler. This is the function prepare.py calls.
-    seed is provided by prepare.py for reproducibility — pass it through."""
-    return SobolCmaEs(seed=seed)
+    return SobolCmaRefine(seed=seed)
