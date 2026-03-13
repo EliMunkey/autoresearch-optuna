@@ -32,16 +32,36 @@ CMA-ES converges by ~trial 140 on most functions. The remaining trial budget is 
 | Multimodal (weak) | 0.3623 | f20–f24 |
 | **Mean** | **0.1501** | **All 24** |
 
-## How It Works
+## Benchmark: BBOB
+
+The [BBOB benchmark suite](https://numbbo.github.io/coco/testsuites/bbob) (Black-Box Optimization Benchmarking) is the gold standard for evaluating continuous black-box optimizers, used in GECCO competitions worldwide. It consists of 24 noiseless functions across 5 difficulty categories:
+
+| Category | Functions | Description |
+|----------|-----------|-------------|
+| Separable | f1–f5 | Independent dimensions |
+| Low conditioning | f6–f9 | Well-conditioned, moderate difficulty |
+| High conditioning | f10–f14 | Ill-conditioned, requires covariance adaptation |
+| Multimodal (global) | f15–f19 | Multiple global optima with visible structure |
+| Multimodal (weak) | f20–f24 | Deceptive multimodal landscapes (hardest) |
+
+**Evaluation protocol:**
+- **Dimension:** 5
+- **Trials per run:** 200
+- **Seeds:** 10 (42–51) for statistical robustness
+- **Metric:** Normalized regret = `(sampler_best - f_opt) / (random_best - f_opt)` — 0.0 = optimal, 1.0 = random-level
+- **Final score:** Mean normalized regret across all 24 functions and 10 seeds
+
+Optimal values (`f_opt`) were computed via `scipy.differential_evolution` with 5 restarts. Random baselines were computed from 10 seeds of 200 random trials each. All results are deterministic and reproducible — full experiment logs in `results.jsonl`.
+
+## How to Run
 
 ```
-train.py    — the ONLY file the AI agent modifies (exports create_sampler())
-prepare.py  — immutable evaluation harness (BBOB × 10 seeds × 200 trials)
-results.jsonl — experiment log
+train.py      — sampler configuration (exports create_sampler())
+prepare.py    — evaluation harness (BBOB × 10 seeds × 200 trials)
+results.jsonl — experiment log (97 experiments)
 progress.png  — regret over time
 ```
 
-Run an experiment:
 ```bash
 python prepare.py
 ```
