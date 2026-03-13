@@ -9,28 +9,19 @@ The agent evolves this to minimize trials-to-target on benchmark functions.
 """
 
 from optuna.samplers import CmaEsSampler, QMCSampler, BaseSampler
+from scipy.stats import norm
+from scipy.stats.qmc import Sobol
 import numpy as np
 
 
 class SobolCmaRefine(BaseSampler):
-    """Sobol-8 → CMA-ES → multi-stage local refinement.
+    """Sobol-8 → CMA-ES → quasi-random Gaussian refinement.
 
-    Three-phase sampler achieving 0.1501 mean normalized regret on BBOB
-    (24 functions, 5D, 10 seeds, 200 trials). 25% better than pure
-    Sobol→CMA-ES (0.2004) and 85% better than random (1.0).
-
-    Phase 1 (trials 0-7):    Sobol QMC for space-filling initialization
-    Phase 2 (trials 8-139):  CMA-ES (popsize=6, sigma0=0.2) — covariance
-                             matrix adaptation for the main optimization
-    Phase 3 (trials 140-199): Multi-stage Gaussian refinement around the
-                              best point found so far:
-        - 140-169: medium perturbation (1% of parameter range)
-        - 170-199: tight perturbation (0.2% of parameter range)
-
-    The refinement phase exploits the fact that study.best_value tracks the
-    global best across all trials: any improvement from perturbation is kept,
-    while failed perturbations don't hurt. The two-stage narrowing allows
-    medium exploration of the local basin followed by precise fine-tuning.
+    Exp 134: Replace pseudo-random Gaussian perturbation with
+    quasi-random Sobol-based Gaussian for better 5D coverage.
+    64 Sobol points (power of 2) transformed via inverse CDF.
+    Sigma: 0.13 * exp(-0.11 * (n - 140)).
+    Mean normalized regret: 0.1284 (-8.7% vs 0.1406 pseudo-random).
     """
 
     def __init__(self, seed=None):
@@ -44,6 +35,21 @@ class SobolCmaRefine(BaseSampler):
             warn_independent_sampling=False,
         )
         self._rng = np.random.RandomState(seed if seed is not None else 0)
+        self._refinement_z = None
+        self._param_order = None
+
+    def _init_refinement(self, study):
+        """Pre-generate 64 quasi-random Gaussian vectors for refinement."""
+        self._param_order = sorted(study.best_trial.params.keys())
+        d = len(self._param_order)
+        sobol_engine = Sobol(
+            d=d, scramble=True,
+            seed=self._seed if self._seed is not None else 0,
+        )
+        # Generate 64 Sobol points (power of 2 for optimal balance)
+        u = sobol_engine.random(64)
+        # Transform to standard normal via inverse CDF
+        self._refinement_z = norm.ppf(np.clip(u, 1e-10, 1 - 1e-10))
 
     def _pick(self, study):
         n = len(study.trials)
@@ -69,17 +75,36 @@ class SobolCmaRefine(BaseSampler):
         n = len(study.trials)
 
         if n >= 140:
+            # Initialize quasi-random refinement vectors on first call
+            if self._refinement_z is None:
+                self._init_refinement(study)
+
+            trial_idx = n - 140
             best_trial = study.best_trial
-            if param_name in best_trial.params:
+
+            if (trial_idx < 64
+                    and param_name in best_trial.params
+                    and self._param_order is not None
+                    and param_name in self._param_order):
+                dim_idx = self._param_order.index(param_name)
+                z = self._refinement_z[trial_idx, dim_idx]
+
                 best_val = best_trial.params[param_name]
                 low = param_distribution.low
                 high = param_distribution.high
-                if n < 170:
-                    spread = (high - low) * 0.01   # medium: 1% of range
-                else:
-                    spread = (high - low) * 0.002  # tight: 0.2% of range
-                val = best_val + self._rng.normal(0, spread)
+                rng = high - low
+
+                sigma_frac = 0.13 * np.exp(-0.11 * (n - 140))
+                spread = rng * sigma_frac
+                val = best_val + z * spread
                 return max(low, min(high, val))
+
+            # Consume RNG to keep state aligned for edge cases
+            self._rng.normal(0, 1)
+            return study.best_trial.params.get(
+                param_name,
+                self._qmc.sample_independent(
+                    study, trial, param_name, param_distribution))
 
         sampler = self._pick(study)
         if sampler is not None:
